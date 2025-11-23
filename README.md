@@ -46,6 +46,7 @@ Spring Boot 기반으로 제작된 F1 레이스 베팅 시뮬레이션입니다.
 ---
 
 ### ⏰ 라운드 진행 흐름
+- 레이스 진행 로직은 상태 머신(State Machine) 패턴을 기반으로 구현하였습니다.
 ```
 READY → BETTING → LOCK → RUNNING → FINISH → PAYOUT
 ```
@@ -129,6 +130,7 @@ speed × accelerationEffect × weatherEffect × durabilityEffect × luck × malf
 | `/topic/user/{userId}/race/{round}/weather` | 해당 라운드의 날씨 정보 아이콘/멘트 |
 | `/topic/user/{userId}/race/{round}/cars/odd` | 차량 배당률(odds) 정보 |
 | `/topic/user/{userId}/race/{round}` | 레이스 종료 정보 |
+
 
 
 
