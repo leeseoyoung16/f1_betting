@@ -1,0 +1,1469 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>F1 베팅 & 레이스</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+    <style>
+        /* ===========================================================
+           기본 스타일 (UI 정돈)
+        =========================================================== */
+        body { font-family: 'Inter', 'Segoe UI', sans-serif; background:#0b0f14; color:#fff; margin:0; text-align:center; display:flex; flex-direction:column; min-height:100vh; }
+        .hidden { display:none; }
+
+        /* ===========================================================
+           로그인 / 로비 카드 스타일 (UI 정돈)
+        =========================================================== */
+        .card {
+            width:90%; /* 모바일 대응 */
+            max-width:450px;
+            margin:80px auto;
+            padding:30px;
+            border-radius:14px;
+            background:rgba(255,255,255,0.08);
+            backdrop-filter:blur(6px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+
+        input {
+            width:100%; /* 카드 너비에 꽉 차게 조정 */
+            padding:12px;
+            margin:10px 0;
+            border-radius:8px;
+            border:none;
+            font-size:18px;
+            color: #0b0f14;
+            box-sizing: border-box; /* 패딩이 너비에 포함되도록 */
+        }
+
+        /* 버튼 컨테이너: 로그인/회원가입 버튼 정렬을 위해 추가 */
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        button {
+            padding:12px 24px;
+            font-size:18px;
+            border:none;
+            border-radius:10px;
+            cursor:pointer;
+            font-weight: bold;
+            transition: transform 0.1s;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-blue { background:#4a74ff; color:white; }
+        .btn-green { background:#2ecc71; color:white; }
+        .btn-red { background:#e74c3c; color:white; }
+
+        /* ===========================================================
+           레이스 및 HUD 스타일
+        =========================================================== */
+        #roundIndicator {
+            position:fixed; top:20px; right:22px;
+            font-size:28px; color:#ffd700;
+            display:none;
+        }
+
+        /* 다음 라운드 버튼 스타일 조정 (작게) */
+        #nextRoundBtn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background: #4a74ff;
+            color: white;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        #raceTrack {
+            width:95%;
+            max-width:1200px;
+            height:330px;
+            margin:100px auto 30px; /* 상단 100px */
+            position:relative;
+            border-top:4px dashed #aaa;
+            border-bottom:4px dashed #aaa;
+            display:none;
+        }
+
+
+        #finishLine {
+            position:absolute; right:4%; top:0;
+            width:12px; height:100%;
+            background: repeating-linear-gradient(
+                    45deg,white 0,white 12px,black 12px,black 24px
+            );
+        }
+
+        /* 자동차 애니메이션 */
+        .car-container {
+            position:absolute; width:200px; transition: top 0.3s ease, left 0.15s linear;
+        }
+
+        .car-image {
+            width:90px;
+            height: auto;
+        }
+
+
+        /* ===========================================================
+           베팅 페이지 스타일 (UI 정돈)
+        =========================================================== */
+        .betting-page-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .betting-title-area {
+            flex-shrink: 0;
+            margin-bottom: 30px;
+        }
+
+        #bettingCarArea {
+            /* 차량 카드 영역은 유연하게 배치 */
+            display:flex;
+            justify-content:center;
+            gap:40px;
+            margin-top:20px;
+            flex-wrap: wrap;
+            padding-bottom: 20px;
+        }
+
+        .bet-car-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px 30px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 4px solid transparent;
+            min-width: 200px; /* 최소 너비 줄임 */
+            flex-grow: 1;
+            max-width: 280px;
+        }
+
+        .bet-car-card:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .bet-car-card.selected {
+            border: 4px solid #ffd700;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+        }
+
+        .selected-car-glow {
+            animation: glowPulse 1.2s infinite ease-in-out;
+            filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.9))
+            drop-shadow(0 0 24px rgba(255, 215, 0, 0.6))
+            drop-shadow(0 0 36px rgba(255, 215, 0, 0.4));
+        }
+
+        @keyframes glowPulse {
+            0% {
+                filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6));
+            }
+            50% {
+                filter: drop-shadow(0 0 20px rgba(255, 215, 0, 1));
+            }
+            100% {
+                filter: drop-shadow(0 0 5px rgba(255, 215, 0, 0.6));
+            }
+        }
+
+        /* ===========================================================
+   결과 모달 (정산서) 스타일
+=========================================================== */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: none; /* 평소엔 숨김 */
+            justify-content: center; align-items: center;
+            z-index: 10000;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .modal-content {
+            background: rgba(20, 24, 30, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            width: 90%; max-width: 500px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            position: relative;
+        }
+
+        .modal-title { font-size: 32px; font-weight: bold; margin-bottom: 20px; }
+        .text-win { color: #ffd700; text-shadow: 0 0 15px rgba(255, 215, 0, 0.5); }
+        .text-lose { color: #e74c3c; }
+
+        .result-info {
+            font-size: 20px; margin: 15px 0; line-height: 1.6; color: #ddd;
+        }
+        .result-amount { font-size: 24px; font-weight: bold; color: #fff; }
+
+        .history-list {
+            text-align: left;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+        .history-item {
+            display: flex; justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-size: 18px;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+        /* =============================
+   폭죽 효과 (Confetti)
+============================= */
+        @keyframes confettiFall {
+            0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+
+        .confetti-piece {
+            position: fixed;
+            top: -10px;
+            width: 10px;
+            height: 20px;
+            background: red;
+            opacity: 0.9;
+            z-index: 999999;
+            animation: confettiFall 1.5s linear forwards;
+        }
+
+        /* 랜덤 색 */
+        .confetti-piece:nth-child(5n+1) { background: #ffd700; }
+        .confetti-piece:nth-child(5n+2) { background: #ff6b6b; }
+        .confetti-piece:nth-child(5n+3) { background: #5f9fff; }
+        .confetti-piece:nth-child(5n+4) { background: #6bff9c; }
+        .confetti-piece:nth-child(5n+5) { background: #ff9f5f; }
+
+        /* =============================
+           황금 플래시 전체 화면
+        ============================= */
+        #goldFlash {
+            position: fixed;
+            top:0;
+            left:0;
+            width:100%;
+            height:100%;
+            background: radial-gradient(circle, rgba(255,215,0,0.8) 0%, rgba(255,215,0,0) 70%);
+            opacity:0;
+            pointer-events:none;
+            z-index:99998;
+            transition: opacity 0.8s ease-out;
+        }
+
+        /* =============================
+           "베팅 성공!" 텍스트 효과
+        ============================= */
+        #betSuccessMessage {
+            position: fixed;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 80px;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 0 0 20px rgba(255,215,0,0.8);
+            opacity: 0;
+            z-index: 999999;
+            transition: all 0.4s ease-out;
+        }
+
+        #betSuccessMessage.active {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.15);
+        }
+
+
+        .bet-car-card .car-image {
+            width: 180px;
+            height: auto;
+            margin: 10px 0;
+            transition: transform 0.3s;
+        }
+
+        .bet-car-card:hover .car-image {
+            transform: scale(1.05);
+        }
+
+        .multiplier {
+            font-size: 36px;
+            font-weight: bold;
+            color: #2ecc71;
+        }
+
+        #bettingControl {
+            /* 베팅 컨트롤 영역은 하단에 고정 */
+            margin-top: auto; /* 남은 공간을 밀어내도록 */
+            width: 100%;
+            max-width: 400px; /* 적절한 최대 너비 설정 */
+            padding-bottom: 40px;
+        }
+
+        #bettingForm input {
+            /* 베팅 입력 필드 크기 조정 */
+            width: 100%;
+            max-width: 300px;
+            margin: 15px auto;
+            display: block;
+        }
+
+        /* ===========================================================
+           순위 표시 스타일 (일직선 정렬)
+        =========================================================== */
+        #rankingDisplay {
+            width:95%; max-width:1200px; margin: 20px auto 40px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: nowrap;
+            gap: 10px;
+            flex-shrink: 0;
+            overflow-x: auto;
+        }
+
+        .ranking-item {
+            font-size: 16px; /* 폰트 크기 조정 */
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            min-width: 120px; /* 최소 너비 조정 */
+            text-align: center;
+            flex-grow: 1;
+            transition: all 0.5s ease-in-out;
+        }
+
+        /* 순위 변동 시 애니메이션 */
+        @keyframes rank-change-pulse {
+            0% { transform: scale(1.0); box-shadow: 0 0 0 rgba(255, 215, 0, 0.0); }
+            50% { transform: scale(1.05); box-shadow: 0 0 15px rgba(255, 215, 0, 0.8); }
+            100% { transform: scale(1.0); box-shadow: 0 0 0 rgba(255, 215, 0, 0.0); }
+        }
+
+        .rank-change {
+            animation: rank-change-pulse 0.5s ease-out 1;
+            color: #ffd700 !important;
+        }
+
+
+        /* ===========================================================
+           방송 및 로딩 스타일
+        =========================================================== */
+        #broadcast {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.85);
+            padding: 16px 30px;
+            border-radius: 12px;
+            font-size: 20px;
+            display: none;
+            z-index: 2;
+            white-space: pre-line;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(74, 116, 255, 0.5);
+        }
+
+        /* 스피너 애니메이션 */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+
+    <script>
+        /* ===========================================================
+            전역 변수 및 초기 상태 (개선된 구조)
+        =========================================================== */
+        let userId; // 현재 로그인된 유저 ID
+        let stompClient;
+        let carsData = [];
+        let totalRounds = 5;
+
+        // ★ [핵심 변경] 유저별 상태를 저장하는 객체 (localStorage 대체)
+        let userSpecificData = {};
+
+        // 유저별 초기 상태 생성 헬퍼
+        function initializeUserData(id) {
+            if (!userSpecificData[id]) {
+                userSpecificData[id] = {
+                    raceId: null,
+                    currentRound: 1,
+                    balance: 0,
+                    selectedCar: null,
+                    selectedMultiplier: null,
+                    currentBetAmount: 0,
+                    isBetting: false,
+                    betTimer: 15,
+                    betInterval: null,
+                    previousRanks: {},
+                    betHistory: [],
+                    activeSubscriptions: {},
+                    currentWeather: null,
+                };
+            }
+        }
+
+
+        function formatMoney(n) {
+            return Number(n).toLocaleString();
+        }
+
+        /* ===========================================================
+            잔액 업데이트 함수
+        =========================================================== */
+        function updateBalance(id, newBalance) {
+            initializeUserData(id); // 안전장치
+            userSpecificData[id].balance = Number(newBalance);
+            const data = userSpecificData[id];
+
+            // 현재 로그인된 유저의 UI만 업데이트
+            if (id === userId) {
+                const lobbyBalanceEl = document.getElementById('lobbyBalance');
+                if (lobbyBalanceEl)
+                    lobbyBalanceEl.innerText = `잔액: ${formatMoney(data.balance)} 원`;
+
+                const bettingTitleEl = document.getElementById('bettingTitle');
+                if (bettingTitleEl) {
+                    bettingTitleEl.innerHTML = `${data.currentRound} 라운드 베팅 (잔액: ${formatMoney(data.balance)}원)
+                <br><span id="betTimer" style="font-size:22px;color:#ffd700;">⏳ ${data.betTimer}초 남음</span>`;
+                }
+            }
+        }
+
+
+        /* ================================================
+   폭죽 + 황금 플래시 + 베팅 성공 연출 함수
+================================================= */
+        function playBetSuccessEffect() {
+            // 1) 텍스트 애니메이션 보여주기
+            const msg = document.getElementById("betSuccessMessage");
+            msg.classList.add("active");
+
+            setTimeout(() => {
+                msg.classList.remove("active");
+            }, 1200);
+
+            // 2) 황금 플래시
+            const flash = document.getElementById("goldFlash");
+            if (flash) {
+                flash.style.opacity = 1;
+                setTimeout(() => {
+                    flash.style.opacity = 0;
+                }, 500);
+            }
+
+            // 3) 폭죽 40개 생성
+            for (let i = 0; i < 40; i++) {
+                const piece = document.createElement("div");
+                piece.classList.add("confetti-piece");
+
+                piece.style.left = Math.random() * 100 + "vw";
+                piece.style.animationDuration = (1 + Math.random()) + "s";
+
+                document.body.appendChild(piece);
+
+                // 애니메이션 끝나면 제거
+                setTimeout(() => piece.remove(), 1800);
+            }
+        }
+
+
+        /* ===========================================================
+            베팅 UI 상태 관리 함수
+        =========================================================== */
+        function hideBettingForm() {
+            // 베팅 입력 폼 및 버튼 숨기기
+            document.getElementById('bettingForm').classList.add("hidden");
+            document.getElementById('selectedCarInfo').classList.add("hidden");
+        }
+
+        function showWaitingMessage(msg) {
+            // 베팅 성공 후 대기 메시지 표시
+            const waitingEl = document.getElementById('waitingMessage');
+            waitingEl.innerText = msg;
+            waitingEl.classList.remove("hidden");
+        }
+
+        function resetBettingUI() {
+            // 새 라운드 시작 시 UI 초기화
+            document.getElementById('bettingForm').classList.remove("hidden");
+            document.getElementById('selectedCarInfo').classList.remove("hidden");
+            document.getElementById('waitingMessage').classList.add("hidden");
+        }
+
+        /* ===========================================================
+            회원 UI 및 인증 (Login/Signup)
+        =========================================================== */
+        function showSignup() {
+            document.getElementById('loginPage').classList.add("hidden");
+            document.getElementById('signupPage').classList.remove("hidden");
+        }
+        function showLogin() {
+            document.getElementById('signupPage').classList.add("hidden");
+            document.getElementById('loginPage').classList.remove("hidden");
+        }
+
+        function login() {
+            const loginUser = document.getElementById('loginUser').value;
+            const loginPw = document.getElementById('loginPw').value;
+
+            fetch("/auth/login", {
+                method: "POST",
+                credentials: "include",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ username: loginUser, password: loginPw })
+            })
+                .then(async r => {
+                    if (!r.ok) {
+                        const errorText = await r.text();
+                        alert("로그인 실패: 아이디 또는 비밀번호를 확인하세요.");
+                        throw new Error("login failed: " + errorText);
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    userId = data.id;
+                    initializeUserData(userId);
+
+                    document.getElementById('loginPage').classList.add("hidden");
+                    document.getElementById('lobbyPage').classList.remove("hidden");
+
+                    loadLobby(userId);
+                })
+                .catch(err => console.error(err));
+        }
+
+
+        function signup() {
+            // 1. 입력 필드 값 가져오기 및 공백 제거
+            const signupUser = document.getElementById('signupUser').value.trim();
+            const signupPw = document.getElementById('signupPw').value.trim();
+
+            // 2. 빈 값 체크
+            if (signupUser.length === 0) {
+                alert("아이디를 입력해주세요.");
+                return;
+            }
+
+            if (signupPw.length === 0) {
+                alert("비밀번호를 입력해주세요.");
+                return;
+            }
+
+            // 서버로 요청
+            fetch("/auth/signup", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ username: signupUser, password: signupPw })
+            })
+                .then(() => {
+                    alert("회원가입 완료");
+                    showLogin();
+                })
+                .catch(() => alert("회원가입 실패"));
+        }
+
+        /* ===========================================================
+    로비 정보 불러오기 & 랭킹 표시
+=========================================================== */
+        function loadLobby(id) {
+            fetch(`/user/${id}`)
+                .then(r => r.json())
+                .then(d => {
+                    console.log(`잔액 수신 데이터 (UserID: ${id}):`, d);
+                    updateBalance(id, d.balance);
+                })
+                .catch(err => console.error(`잔액 로드 오류 (UserID: ${id}):`, err));
+
+            fetch("/user/ranking")
+                .then(r => r.json())
+                .then(list => {
+                    console.log("랭킹 수신 데이터:", list);
+                    showRanking(list, id); // 현재 로그인 유저 ID도 전달
+                })
+                .catch(err => console.error("랭킹 로드 오류:", err));
+        }
+
+        function showRanking(list, me) {
+            let html = "";
+            const rankingList = document.getElementById('rankingList');
+
+            if (!Array.isArray(list) || list.length === 0) {
+                rankingList.innerHTML = "<div style='color: #aaa;'>랭킹 정보가 없습니다.</div>";
+                return;
+            }
+
+            list.forEach((u, idx) => {
+                const isMe = u.userId === me;
+
+                html += `
+            <div style="margin:6px 0; font-size:18px; ${isMe ? 'font-weight:bold;color:#4a74ff;' : ''}">
+                ${idx + 1}등&nbsp;&nbsp; ${u.username} — ${u.balance.toLocaleString()}원 ${isMe ? " ← 나" : ""}
+            </div>`;
+            });
+
+            rankingList.innerHTML = html;
+        }
+
+        /* ===========================================================
+            레이스 시작 & WS 연결
+        =========================================================== */
+        function startRace() {
+            document.getElementById('loadingOverlay').style.display = "flex";
+
+            fetch("/race/start", {
+                method: "POST",
+                credentials: "include"
+            })
+                .then(async r => {
+                    if (!r.ok) {
+                        const errorText = await r.text();
+                        alert("레이스 시작 실패: 세션이 만료되었거나 인증에 실패했습니다. 다시 로그인해주세요.");
+                        throw new Error("Start Race failed: " + errorText);
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    const raceId = data.raceId;
+
+                    // 1. Race ID 메모리 저장
+                    userSpecificData[userId].raceId = raceId;
+
+                    document.getElementById('lobbyPage').classList.add("hidden");
+
+                    connectWS(() => {
+                        // 2. Round 1 구독 시작
+                        subscribeRound(userId, 1);
+
+                        // 3. Round Next 요청 (Race ID 포함)
+                        fetch(`/race/next`, {
+                            method: "POST",
+                            credentials: "include",
+                            headers: {"Content-Type": "application/json"},
+                            body: JSON.stringify({ raceId: raceId })
+                        })
+                            .catch(err => {
+                                // race/next 요청 오류 처리
+                                console.error("Race Next Start Error:", err);
+                                alert("다음 라운드 시작 요청 중 오류 발생.");
+                            });
+                    });
+                })
+                .catch(err => {
+                    // 초기 race/start 실패 시 오류 처리
+                    console.error("Race Start Error:", err);
+                    document.getElementById('loadingOverlay').style.display = "none";
+                    if (!err.message.includes("failed")) {
+                        alert("레이스 시작 중 오류가 발생했습니다. 로그를 확인하세요.");
+                    }
+                });
+        }
+
+        function connectWS(onConnected) {
+            const socket = new SockJS("/ws");
+            stompClient = Stomp.over(socket);
+
+            stompClient.connect({}, frame => {
+                console.log("WS Connected");
+                document.getElementById('loadingOverlay').style.display = "none";
+
+                if (onConnected) onConnected();
+            });
+        }
+
+
+        /* ===========================================================
+    라운드 구독
+=========================================================== */
+        function subscribeRound(id, round) {
+            initializeUserData(id);
+            const data = userSpecificData[id];
+            data.currentRound = round;
+
+            // ★ 기존 구독 제거
+            clearPreviousSubscriptions(id);
+
+            const raceId = data.raceId;
+            const userTopicPrefix = `/topic/user/${id}/race/${round}`;
+
+            // 현재 로그인된 유저의 UI만 조작
+            if (id === userId) {
+                document.getElementById('raceTrack').style.display = "none";
+                document.getElementById('hud').style.display = "none";
+                document.getElementById('rankingDisplay').style.display = "none";
+
+                document.getElementById('roundIndicator').innerText =
+                    `ROUND ${round} / ${totalRounds}`;
+                document.getElementById('roundIndicator').style.display = "block";
+            }
+
+
+            /* 차량 그룹 */
+            data.activeSubscriptions[userTopicPrefix + "/cars/group"] =
+                stompClient.subscribe(userTopicPrefix + "/cars/group", msg => {
+                    // 차량 데이터는 모든 유저가 공유하므로 전역 변수 carsData에 저장
+                    carsData = JSON.parse(msg.body);
+
+                    if (id === userId) {
+                        document.getElementById('raceTrack').style.display = "block";
+                        document.getElementById('hud').style.display = "block";
+                        document.getElementById('rankingDisplay').style.display = "block";
+                    }
+                });
+
+            /* 날씨 */
+            data.activeSubscriptions[userTopicPrefix + "/weather"] =
+                stompClient.subscribe(userTopicPrefix + "/weather", msg => {
+                    const w = JSON.parse(msg.body);
+                    data.currentWeather = w; // 유저별 날씨 저장
+                });
+
+            fetch(`/user/${id}`)
+                .then(r => r.json())
+                .then(user => updateBalance(id, user.balance));
+
+            /* 배당률 */
+            data.activeSubscriptions[userTopicPrefix + "/cars/odd"] =
+                stompClient.subscribe(userTopicPrefix + "/cars/odd", msg => {
+                    const oddData = JSON.parse(msg.body);
+                    const odds = Array.isArray(oddData) ? oddData : (oddData.cars || oddData.odds);
+
+                    // 현재 로그인된 유저만 베팅 UI 표시
+                    if (id === userId) showBetUI(id, odds);
+                });
+
+            /* 진행 + 종료 */
+            data.activeSubscriptions[userTopicPrefix] =
+                stompClient.subscribe(userTopicPrefix, msg => {
+                    const b = JSON.parse(msg.body);
+
+                    if (b.type === "TURN_UPDATE") {
+                        if (id === userId) {
+                            updatePositions(id, b.distances);
+                            updateHUD(id, data.currentWeather, b.distances);
+                        }
+                    }
+
+                    if (b.type === "RACE_END") {
+                        if (id === userId) {
+                            showRoundResult(id, b.winner);
+                        }
+                    }
+                });
+        }
+
+        function clearPreviousSubscriptions(id) {
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            console.log(`🔄 User ${id}의 기존 구독 삭제`);
+
+            if (!stompClient || !stompClient.connected) return;
+
+            // activeSubscriptions에 저장된 모든 구독 해제
+            Object.values(data.activeSubscriptions).forEach(sub => {
+                try { sub.unsubscribe(); } catch (e) { console.error(e); }
+            });
+
+            data.activeSubscriptions = {};  // 초기화
+        }
+
+
+        /* ===========================================================
+            차 이미지 매핑 & 트랙 렌더링
+        =========================================================== */
+        function getCarImage(name) {
+            const key = name.toLowerCase().replace(/\s/g, '');
+
+            const map = {
+                "alpine": "alpine.png",
+                "aston": "aston.png",
+                "astonmartin": "aston.png",
+                "ferrari": "ferrari.png",
+                "haas": "haas.png",
+                "mclaren": "mclaren.png",
+                "mercedes": "mercedes.png",
+                "rb": "rb.png",
+                "redbull": "redbull.png",
+                "redbullracing": "redbull.png",
+                "sauber": "sauber.png",
+                "williams": "williams.png"
+            };
+
+            const filename = map[key] || "default.png";
+
+            return `/img/cars/${filename}`;
+        }
+
+        function renderTrack(id) {
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            if (id !== userId) return; // 현재 로그인된 유저만 트랙 렌더링
+
+            const raceTrack = document.getElementById('raceTrack');
+            raceTrack.style.display = "block";
+            document.getElementById('rankingDisplay').style.display = "flex";
+            raceTrack.innerHTML = '<div id="finishLine"></div>';
+
+            data.previousRanks = {}; // 유저별 순위 초기화
+
+            carsData.forEach((c, i) => {
+                const img = getCarImage(c.name);
+
+                const isSelected = (data.selectedCar === c.id);
+
+                raceTrack.innerHTML += `
+            <div id="car_${c.name}"
+                 class="car-container ${isSelected ? 'selected-car-glow' : ''}"
+                 style="top:${40 + i * 80}px; left:0;">
+                <div style="font-size:16px;font-weight:bold">${c.name}</div>
+                <img src="${img}" class="car-image">
+            </div>`;
+            });
+        }
+
+
+        /* ===========================================================
+    위치 및 순위 업데이트
+=========================================================== */
+        function updatePositions(id, dist) {
+            if (id !== userId) return;
+
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            const raceTrack = document.getElementById('raceTrack');
+            const w = raceTrack.clientWidth;
+            const rankingDisplay = document.getElementById('rankingDisplay');
+            const currentDistances = [];
+
+            Object.entries(dist).forEach(([name, d]) => {
+                const km = d / 10;
+                currentDistances.push({ name, distance: d, kmDistance: km });
+
+                const px = (d / 100) * (w - 200);
+                const car = document.getElementById(`car_${name}`);
+                if (car) car.style.left = px + "px";
+            });
+
+            currentDistances.sort((a, b) => b.distance - a.distance);
+
+            let rankingHTML = "";
+            const currentRanks = {};
+
+            currentDistances.forEach((item, index) => {
+                const carName = item.name;
+                const currentRank = index + 1;
+                currentRanks[carName] = currentRank;
+
+                const prevRank = data.previousRanks[carName]; // 유저별 이전 순위
+                const rankChanged = prevRank !== undefined && prevRank !== currentRank;
+
+                const animationClass = rankChanged ? 'rank-change' : '';
+
+                rankingHTML += `
+            <div id="rank_item_${carName}" class="ranking-item ${animationClass}" data-rank="${currentRank}">
+                ${currentRank}위: ${carName}<br>(${item.kmDistance.toFixed(2)}km)
+            </div>
+        `;
+            });
+
+            rankingDisplay.innerHTML = rankingHTML;
+
+            currentDistances.forEach((item) => {
+                const carName = item.name;
+                const currentRank = currentRanks[carName];
+                const prevRank = data.previousRanks[carName];
+                const rankChanged = prevRank !== undefined && prevRank !== currentRank;
+
+                if (rankChanged) {
+                    setTimeout(() => {
+                        const el = document.getElementById(`rank_item_${carName}`);
+                        if (el) {
+                            el.classList.remove('rank-change');
+                        }
+                    }, 500);
+                }
+            });
+
+            data.previousRanks = currentRanks;
+        }
+
+        /* ===========================================================
+            베팅 UI 표시
+        =========================================================== */
+        function showBetUI(id, odds) {
+            if (id !== userId) return;
+
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            data.isBetting = true;
+            document.getElementById('bettingPage').classList.remove("hidden");
+            // 레이스 화면 숨기기
+            document.getElementById('raceTrack').style.display = "none";
+            document.getElementById('hud').style.display = "none";
+            document.getElementById('rankingDisplay').style.display = "none";
+
+            resetBettingUI();
+
+            document.getElementById('bettingTitle').innerHTML = `${data.currentRound} 라운드 베팅 (잔액: ${data.balance.toLocaleString()}원)
+            <br><span id="betTimer" style="font-size:22px;color:#ffd700;">⏳ ${data.betTimer}초 남음</span>`;
+
+            const limitAmount = Math.floor(data.balance * 0.6);
+
+            // 베팅 초기화
+            data.selectedCar = null;
+            data.selectedMultiplier = null;
+            document.getElementById('betInput').value = "";
+            document.getElementById('betInput').placeholder = `최대 ${limitAmount.toLocaleString()}원 (60%) 가능`;
+            document.getElementById('betInput').disabled = true;
+            document.getElementById('confirmBetBtn').disabled = true;
+            document.getElementById('selectedCarInfo').innerHTML = "차량을 선택해주세요.";
+
+            clearInterval(data.betInterval);
+            data.betTimer = 15;
+
+            data.betInterval = setInterval(() => {
+                data.betTimer--;
+                const timerEl = document.getElementById("betTimer");
+                if (timerEl) timerEl.innerText = `⏳ ${data.betTimer}초 남음`;
+
+                if (data.betTimer <= 0) {
+                    clearInterval(data.betInterval);
+                    showBroadcast("베팅 시간이 종료되었습니다. 곧 레이스가 시작됩니다.", 2000);
+
+                    document.getElementById('bettingPage').classList.add("hidden");
+
+                    if (data.currentWeather) {
+                        const w = data.currentWeather;
+                        showBroadcast(`날씨: ${w.icon} ${w.name}\n${w.commentary}`, 3000);
+                    }
+
+                    renderTrack(id);
+                }
+            }, 1000);
+
+            // 차량 베팅 카드 렌더링
+            const betArea = document.getElementById("bettingCarArea");
+            betArea.innerHTML = "";
+
+            odds.forEach(o => {
+                const car = carsData.find(c => c.id === o.carId);
+                const carName = car ? car.name : "Unknown Car";
+                const imgUrl = getCarImage(carName);
+
+                const card = document.createElement("div");
+                card.className = "bet-car-card";
+                card.id = `bet_card_${o.carId}`;
+
+                card.onclick = () => selectBetCar(id, o.carId, carName, o.multiplier);
+
+                card.innerHTML = `
+                    <div style="font-size: 26px; font-weight: bold; margin-bottom: 10px;">${carName}</div>
+                    <img src="${imgUrl}" class="car-image"><br>
+                    <div class="multiplier">X${o.multiplier.toFixed(2)}배</div>
+                `;
+                betArea.appendChild(card);
+            });
+        }
+
+        function selectBetCar(id, carId, name, multiplier) {
+            if (id !== userId) return;
+
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            data.selectedCar = carId;
+            data.selectedMultiplier = multiplier;
+            const betInput = document.getElementById('betInput');
+            const confirmBetBtn = document.getElementById('confirmBetBtn');
+
+            document.querySelectorAll('.bet-car-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+
+            document.getElementById(`bet_card_${carId}`).classList.add('selected');
+
+            document.getElementById('selectedCarInfo').innerHTML = `
+                선택: **${name}** | **${multiplier.toFixed(2)}배**<br>
+                <span style="color:#2ecc71;">베팅 금액을 입력해주세요.</span>
+            `;
+            betInput.disabled = false;
+            confirmBetBtn.disabled = false;
+            betInput.focus();
+        }
+
+
+        function confirmBetFinal() {
+            const id = userId;
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            data.isBetting = false;
+
+            const betInput = document.getElementById('betInput');
+            const amount = parseInt(betInput.value, 10);
+
+            data.currentBetAmount = amount;
+
+            // 유효성 검사
+            if (!data.selectedCar) {
+                alert("베팅할 차량을 선택해주세요.");
+                data.isBetting = true;
+                return;
+            }
+            const limitAmount = Math.floor(data.balance * 0.6); // 내 돈의 60%
+
+            // 금액이 60%를 넘는지 확인
+            if (amount > limitAmount) {
+                alert(`🛑 파산 방지를 위해 보유 금액의 60% (${limitAmount.toLocaleString()}원)까지만 베팅할 수 있어요!`);
+                betInput.value = limitAmount;
+                data.isBetting = true;
+                return;
+            }
+
+            // 기본 금액 체크
+            if (isNaN(amount) || amount <= 0 || amount > data.balance) {
+                alert(`유효한 베팅 금액을 입력해주세요. (최대 잔액: ${data.balance.toLocaleString()}원)`);
+                data.isBetting = true;
+                return;
+            }
+
+            const raceId = data.raceId;
+
+            fetch("/bet/place", {
+                method: "POST",
+                credentials: "include",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    userId: id,
+                    raceId: raceId,
+                    roundId: data.currentRound,
+                    carId: data.selectedCar,
+                    amount: amount
+                })
+            }).then(response => {
+                if (response.ok) {
+                    return response.json();
+                }
+                return response.text().then(text => {
+                    let errorMessage = '베팅에 실패했습니다. (잔액 부족 또는 서버 오류)';
+                    try {
+                        const jsonError = JSON.parse(text);
+                        errorMessage = jsonError.message || errorMessage;
+                    } catch (e) {
+                        const parts = text.split(":");
+                        errorMessage = parts.length > 1 ? parts[1].trim() : text;
+                    }
+                    throw new Error(errorMessage);
+                });
+            })
+                .then(resultData => {
+                    updateBalance(id, resultData.newBalance);
+
+                    hideBettingForm();
+                    showWaitingMessage("경기 시작 준비 중...");
+
+                    showBroadcast("베팅 성공!", 1500);
+
+                    document.querySelectorAll('.bet-car-card').forEach(card => {
+                        card.onclick = null;
+                        card.style.opacity = 0.7;
+                    });
+                })
+                .catch(error => {
+                    alert(error.message);
+                    console.error("Betting Error:", error);
+                    data.isBetting = true;
+                });
+        }
+
+        // 라운드 종료
+        function showRoundResult(id, result) {
+            if (id !== userId) return;
+
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            let winnerName = "";
+
+            if (typeof result === 'string') {
+                try { winnerName = JSON.parse(result).winner; }
+                catch (e) { winnerName = result; }
+            } else {
+                winnerName = result.winner || "알 수 없음";
+            }
+
+            fetch(`/user/${id}`)
+                .then(r => r.json())
+                .then(user => {
+                    updateBalance(id, user.balance);
+
+                    const winnerCarObj = carsData.find(c => c.name === winnerName);
+                    const isWin = (data.selectedCar && winnerCarObj && data.selectedCar === winnerCarObj.id);
+
+                    const historyItem = {
+                        round: data.currentRound,
+                        result: isWin ? 'WIN' : 'LOSE',
+                        profit: isWin ? Math.floor(data.currentBetAmount * data.selectedMultiplier - data.currentBetAmount) : -data.currentBetAmount
+                    };
+                    data.betHistory.push(historyItem);
+
+                    const modal = document.getElementById('resultModal');
+                    const title = document.getElementById('resultTitle');
+                    const body = document.getElementById('resultBody');
+                    const nextBtn = document.getElementById('modalNextBtn');
+
+                    modal.style.display = 'flex';
+
+                    if (isWin) {
+                        // === 승리 시 ===
+                        playBetSuccessEffect(); // 폭죽 효과!
+                        title.innerText = "🎉 베팅 성공! 🎉";
+                        title.className = "modal-title text-win";
+
+                        const profit = Math.floor(data.currentBetAmount * data.selectedMultiplier - data.currentBetAmount);
+
+                        body.innerHTML = `
+                    <div class="result-info">
+                        우승 차량: <strong>${winnerName}</strong><br>
+                        배당률: <span style="color:#2ecc71">${data.selectedMultiplier.toFixed(2)}배</span>
+                    </div>
+                    <div style="background:rgba(255,215,0,0.1); padding:15px; border-radius:10px; margin-top:15px;">
+                        <div style="font-size:18px; margin-bottom:5px;">수익금</div>
+                        <div class="result-amount" style="color:#ffd700">+${formatMoney(profit)} 원</div>
+                    </div>
+                    <div style="margin-top:20px; font-size:18px; color:#aaa;">
+                        현재 잔액: <span style="color:white">${formatMoney(user.balance)} 원</span>
+                    </div>
+                `;
+                    } else {
+                        // === 패배 시 ===
+                        title.innerText = "베팅 실패...";
+                        title.className = "modal-title text-lose";
+
+                        body.innerHTML = `
+                    <div class="result-info">
+                        우승 차량: <strong>${winnerName}</strong><br>
+                        (내가 베팅한 차: ${getCarNameById(data.selectedCar)})
+                    </div>
+                    <div style="margin-top:20px; font-size:18px; color:#aaa;">
+                        현재 잔액: <span style="color:white">${formatMoney(user.balance)} 원</span>
+                    </div>
+                `;
+                    }
+
+
+                    if (data.currentRound >= totalRounds) {
+                        nextBtn.innerText = "최종 결과 보기";
+                        nextBtn.onclick = () => showFinalResults(id);
+                    } else {
+                        nextBtn.innerText = "다음 라운드 ▶";
+                        nextBtn.onclick = () => {
+                            modal.style.display = 'none';
+                            goToNextRound(id);
+                        };
+                    }
+                });
+        }
+
+        function getCarNameById(id) {
+            const car = carsData.find(c => c.id === id);
+            return car ? car.name : "선택 안함";
+        }
+
+        function goToNextRound(id) {
+            if (id !== userId) return;
+
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            if (!data.raceId) {
+                console.error("Race ID가 유효하지 않습니다. 레이스 시작이 누락되었을 수 있습니다.");
+                alert("⚠️ 레이스 ID 오류로 다음 라운드 진행 불가. 다시 시작해주세요.");
+                return;
+            }
+
+            document.getElementById('bettingPage').classList.add("hidden");
+            document.getElementById('raceTrack').innerHTML = '';
+            document.getElementById('rankingDisplay').innerHTML = '';
+
+            data.currentRound++;
+            data.previousRanks = {};
+
+            console.log(`디버그: 다음 라운드 요청 - UserId: ${id}, Stored RaceId: ${data.raceId}, Next Round: ${data.currentRound}`);
+
+            fetch(`/race/next`, {
+                method: "POST",
+                credentials: "include",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ raceId: data.raceId })
+            }).then(r => {
+                if (!r.ok) {
+                    console.error(`POST /race/next 실패: HTTP 상태 ${r.status}`);
+                    return r.text().then(text => { throw new Error(`라운드 진행 실패: ${text}`); });
+                }
+                return r.json();
+            })
+                .then(raceData => {
+                    subscribeRound(id, data.currentRound);
+                })
+                .catch(error => {
+                    alert(error.message);
+                    console.error("라운드 진행 중 치명적인 오류 발생:", error);
+                });
+        }
+
+        function showFinalResults(id) {
+            if (id !== userId) return;
+
+            initializeUserData(id);
+            const data = userSpecificData[id];
+
+            const modal = document.getElementById('resultModal');
+            const title = document.getElementById('resultTitle');
+            const body = document.getElementById('resultBody');
+            const nextBtn = document.getElementById('modalNextBtn');
+
+            title.innerText = "🏁 레이스 종료 - 최종 전적 🏁";
+            title.className = "modal-title";
+            title.style.color = "#fff";
+
+            let listHtml = '<div class="history-list">';
+            let totalProfit = 0;
+
+            data.betHistory.forEach(item => { // 유저별 전적 사용
+                const color = item.result === 'WIN' ? '#ffd700' : '#e74c3c';
+                const sign = item.result === 'WIN' ? '+' : '';
+                totalProfit += item.profit;
+
+                listHtml += `
+            <div class="history-item">
+                <span>${item.round} 라운드</span>
+                <span style="font-weight:bold; color:${color}">${item.result}</span>
+                <span style="color:#fff">${sign}${formatMoney(item.profit)}원</span>
+            </div>
+        `;
+            });
+            listHtml += '</div>';
+
+            const totalColor = totalProfit >= 0 ? '#ffd700' : '#e74c3c';
+            const totalSign = totalProfit >= 0 ? '+' : '';
+
+            body.innerHTML = `
+        <div style="font-size:22px; margin-bottom:15px;">
+            최종 손익: <strong style="color:${totalColor}">${totalSign}${formatMoney(totalProfit)} 원</strong>
+        </div>
+        ${listHtml}
+    `;
+
+            nextBtn.innerText = "로비로 돌아가기";
+            nextBtn.className = "btn-red";
+            nextBtn.onclick = () => {
+                modal.style.display = 'none';
+
+                const raceContent = document.getElementById('raceContent');
+                if (raceContent) {
+                    raceContent.style.display = 'none';
+                }
+
+                const loginPage = document.getElementById('loginPage');
+                if (loginPage) {
+                    loginPage.classList.add("hidden");
+                }
+
+                document.getElementById('lobbyPage').classList.remove("hidden");
+
+                userSpecificData[id].currentRound = 1;
+                userSpecificData[id].betHistory = [];
+                userSpecificData[id].raceId = null;
+
+                loadLobby(id);
+            };
+        }
+
+        /* ===========================================================
+            방송 텍스트
+        =========================================================== */
+        function showBroadcast(msg, duration = 2500) {
+            const broadcast = document.getElementById('broadcast');
+            // 이전 애니메이션을 위해 opacity를 0으로 바로 변경
+            broadcast.style.opacity = 0;
+            broadcast.style.display = "block";
+            broadcast.innerText = msg;
+
+            // 페이드 인
+            setTimeout(() => broadcast.style.opacity = 1, 10);
+
+            // 페이드 아웃
+            setTimeout(() => broadcast.style.opacity = 0, duration);
+            setTimeout(() => broadcast.style.display = "none", duration + 500);
+        }
+    </script>
+</head>
+<body>
+
+<div id="loginPage" class="card">
+    <h2>로그인</h2>
+    <input id="loginUser" placeholder="아이디 입력">
+    <input id="loginPw" type="password" placeholder="비밀번호 입력">
+    <div class="button-group">
+        <button class="btn-blue" onclick="login()">로그인</button>
+        <button class="btn-green" onclick="showSignup()">회원가입</button>
+    </div>
+</div>
+
+<div id="signupPage" class="card hidden">
+    <h2>회원가입</h2>
+    <input id="signupUser" placeholder="아이디 입력">
+    <input id="signupPw" type="password" placeholder="비밀번호 입력">
+    <div class="button-group">
+        <button class="btn-green" onclick="signup()">회원가입 완료</button>
+        <button class="btn-red" onclick="showLogin()">돌아가기</button>
+    </div>
+</div>
+
+<div id="lobbyPage" class="card hidden">
+    <h2>환영합니다!</h2>
+    <p id="lobbyBalance" style="font-size: 20px; font-weight: bold;">잔액: -</p>
+
+    <h3 style="margin-top: 30px;">유저 랭킹</h3>
+    <div id="rankingList" style="margin-top:15px; background: rgba(0,0,0,0.1); padding: 10px; border-radius: 8px; max-height: 200px; overflow-y: auto;"></div>
+
+    <button class="btn-blue" onclick="startRace()" style="width: 100%; margin-top: 30px; padding: 15px;">레이스 시작</button>
+</div>
+
+<div id="bettingPage" class="hidden"
+     style="
+       position:fixed;
+       top:0; left:0; width:100%; height:100%;
+       background:#0b0f14;
+       color:#fff;
+       z-index:9999;
+       overflow-y: auto;
+     ">
+
+    <div class="betting-page-container">
+        <div class="betting-title-area">
+            <h2 id="bettingTitle" style="font-size:32px;"></h2>
+        </div>
+
+        <div id="bettingCarArea">
+        </div>
+
+        <div id="bettingControl">
+            <div id="selectedCarInfo" style="margin-bottom:20px; font-size:24px; min-height: 50px;">
+                차량을 선택해주세요.
+            </div>
+
+            <div id="bettingForm">
+                <input id="betInput"
+                       placeholder="베팅 금액 입력"
+                       type="number"
+                       min="100"
+                       style="padding:15px; font-size:20px; border-radius:10px;"
+                       disabled>
+                <button id="confirmBetBtn"
+                        onclick="confirmBetFinal()"
+                        style="margin-top:20px; padding:15px 40px; font-size:22px; width: 100%;"
+                        class="btn-blue"
+                        disabled>베팅 완료</button>
+            </div>
+
+            <div id="waitingMessage" class="hidden" style="font-size:30px; font-weight:bold; color:#ffd700; padding:20px;">
+                경기 시작 준비 중...
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="raceContent" style="flex-grow: 1; display: flex; flex-direction: column;">
+    <div id="roundIndicator">ROUND 1 / 5</div>
+
+    <div id="raceTrack">
+        <div id="finishLine"></div>
+    </div>
+
+    <div id="rankingDisplay" style="display: none;">
+    </div>
+
+    <div id="hud" class="hidden"></div>
+</div>
+
+<div id="broadcast"></div>
+
+<div id="loadingOverlay"
+     style="
+        position:fixed; top:0; left:0; width:100%; height:100%;
+        background:rgba(0,0,0,0.75);
+        color:white;
+        display:none;
+        justify-content:center;
+        align-items:center;
+        flex-direction:column;
+        z-index:99999;
+     ">
+
+    <div class="spinner" style="
+        border: 6px solid rgba(255,255,255,0.2);
+        border-top: 6px solid white;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        animation: spin 1s linear infinite;
+        margin-bottom:20px;
+    "></div>
+
+    <div style="font-size:24px; font-weight:bold;">
+        연결 중입니다...
+    </div>
+</div>
+<div id="goldFlash"></div>
+<div id="betSuccessMessage"> 베팅 성공! </div>
+
+<div id="resultModal" class="modal-overlay">
+    <div class="modal-content" style="animation: popIn 0.4s ease-out;">
+        <h2 id="resultTitle" class="modal-title"></h2>
+
+        <div id="resultBody">
+        </div>
+
+        <button id="modalNextBtn" class="btn-blue" style="margin-top: 30px; width: 100%; padding: 15px;">
+            다음 라운드 ▶
+        </button>
+    </div>
+</div>
+</body>
+</html>
