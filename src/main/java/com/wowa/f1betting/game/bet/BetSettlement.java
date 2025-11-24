@@ -20,7 +20,7 @@ public class BetSettlement {
         boolean isWin = betCar.getId().equals(winnerCar.getId());
 
         if (isWin) {
-            double multiplier = betPayoutCalculator.run(betCar, chanceOfWinningCar);
+            double multiplier = betPayoutCalculator.run(chanceOfWinningCar);
             long payout = (long) (record.getAmount() * multiplier);
             long profit = payout - record.getAmount();
 

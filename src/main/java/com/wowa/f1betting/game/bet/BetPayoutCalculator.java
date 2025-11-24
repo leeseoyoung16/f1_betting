@@ -1,6 +1,5 @@
 package com.wowa.f1betting.game.bet;
 
-import com.wowa.f1betting.domain.race.Car;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -8,7 +7,7 @@ public class BetPayoutCalculator {
     private static final double MIN_MULTIPLIER = 1.1;
     private static final double MAX_MULTIPLIER = 10.0;
 
-    public double run(Car car, double chance) {
+    public double run(double chance) {
         if (chance <= 0) {
             return MAX_MULTIPLIER;
         }
