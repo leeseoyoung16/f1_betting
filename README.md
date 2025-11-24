@@ -13,7 +13,7 @@ Spring Boot 기반으로 제작된 F1 레이스 베팅 시뮬레이션입니다.
 
 ----
 
-### 🎥 시연 영상 (Demo Video)
+### 🎥 시연 영상
 
 ![시연영상](https://github.com/user-attachments/assets/e3bcb1fa-2690-4c8f-86b5-fd6671a42386)
 
@@ -21,7 +21,7 @@ Spring Boot 기반으로 제작된 F1 레이스 베팅 시뮬레이션입니다.
 
 ---
 
-### ✨ 주요 기능 (Features)
+### ✨ 주요 기능
 
 - **5라운드 레이스 시뮬레이션**  
   라운드마다 3대의 차량 랜덤 선정 후 진행
@@ -130,6 +130,7 @@ speed × accelerationEffect × weatherEffect × durabilityEffect × luck × malf
 | `/topic/user/{userId}/race/{round}/weather` | 해당 라운드의 날씨 정보 아이콘/멘트 |
 | `/topic/user/{userId}/race/{round}/cars/odd` | 차량 배당률(odds) 정보 |
 | `/topic/user/{userId}/race/{round}` | 레이스 종료 정보 |
+
 
 
 
