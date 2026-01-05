@@ -68,7 +68,7 @@ public class RoundSetupService {
                 .map(entry -> {
                     Car car = entry.getKey();
                     double chance = entry.getValue();
-                    double multiplier = payoutCalculator.run(car, chance);
+                    double multiplier = payoutCalculator.run(chance);
 
                     return new CarOddsDto(
                             car.getId(),
